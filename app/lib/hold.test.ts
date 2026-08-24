@@ -1,0 +1,142 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  computeExpiry,
+  isHoldIdempotent,
+  shouldReserve,
+} from "./hold.ts";
+
+describe("computeExpiry", () => {
+  it("adds hold hours to the start time", () => {
+    const from = new Date("2026-08-24T12:00:00.000Z");
+    assert.equal(
+      computeExpiry(from, 72).toISOString(),
+      "2026-08-27T12:00:00.000Z",
+    );
+    assert.equal(
+      computeExpiry(from, 24).toISOString(),
+      "2026-08-25T12:00:00.000Z",
+    );
+    assert.equal(
+      computeExpiry(from, 168).toISOString(),
+      "2026-08-31T12:00:00.000Z",
+    );
+  });
+});
+
+describe("shouldReserve", () => {
+  it("reserves on invoice_sent status", () => {
+    assert.equal(
+      shouldReserve("invoice_sent", { status: "invoice_sent" }),
+      true,
+    );
+  });
+
+  it("reserves when invoice_sent_at is set even if status is still open", () => {
+    assert.equal(
+      shouldReserve("invoice_sent", {
+        status: "open",
+        invoice_sent_at: "2026-08-24T12:00:00-04:00",
+      }),
+      true,
+    );
+  });
+
+  it("does not treat a missing invoice as sent", () => {
+    assert.equal(
+      shouldReserve("invoice_sent", {
+        status: "open",
+        invoice_sent_at: null,
+      }),
+      false,
+    );
+  });
+
+  it("never reserves a completed draft", () => {
+    assert.equal(
+      shouldReserve("invoice_sent", {
+        status: "completed",
+        invoice_sent_at: "2026-08-24T12:00:00-04:00",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldReserve("draft_created", { status: "COMPLETED" }),
+      false,
+    );
+  });
+
+  it("reserves any non-completed draft when trigger is draft_created", () => {
+    assert.equal(shouldReserve("draft_created", { status: "open" }), true);
+    assert.equal(
+      shouldReserve("draft_created", { status: "invoice_sent" }),
+      true,
+    );
+  });
+});
+
+describe("isHoldIdempotent", () => {
+  it("creates a hold when none exists and the event is reserve", () => {
+    assert.equal(isHoldIdempotent(null, { kind: "reserve" }), "create");
+  });
+
+  it("skips paid or deleted events when no hold exists", () => {
+    assert.equal(isHoldIdempotent(null, { kind: "paid" }), "skip");
+    assert.equal(isHoldIdempotent(null, { kind: "deleted" }), "skip");
+  });
+
+  it("does not double-reserve or extend an active hold", () => {
+    assert.equal(
+      isHoldIdempotent({ status: "active" }, { kind: "reserve" }),
+      "skip",
+    );
+  });
+
+  it("does not reserve again after the draft is paid", () => {
+    assert.equal(
+      isHoldIdempotent({ status: "paid" }, { kind: "reserve" }),
+      "skip",
+    );
+  });
+
+  it("allows a new reserve after expiry, release, or error", () => {
+    assert.equal(
+      isHoldIdempotent({ status: "expired" }, { kind: "reserve" }),
+      "update",
+    );
+    assert.equal(
+      isHoldIdempotent({ status: "released" }, { kind: "reserve" }),
+      "update",
+    );
+    assert.equal(
+      isHoldIdempotent({ status: "error" }, { kind: "reserve" }),
+      "update",
+    );
+  });
+
+  it("marks an existing hold paid once", () => {
+    assert.equal(
+      isHoldIdempotent({ status: "active" }, { kind: "paid" }),
+      "update",
+    );
+    assert.equal(
+      isHoldIdempotent({ status: "paid" }, { kind: "paid" }),
+      "skip",
+    );
+  });
+
+  it("releases an active hold on delete, but not a paid one", () => {
+    assert.equal(
+      isHoldIdempotent({ status: "active" }, { kind: "deleted" }),
+      "update",
+    );
+    assert.equal(
+      isHoldIdempotent({ status: "paid" }, { kind: "deleted" }),
+      "skip",
+    );
+    assert.equal(
+      isHoldIdempotent({ status: "released" }, { kind: "deleted" }),
+      "skip",
+    );
+  });
+});

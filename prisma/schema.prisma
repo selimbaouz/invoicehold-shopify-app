@@ -1,0 +1,96 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+// SQLite in local dev. Switch the provider to postgresql and DATABASE_URL in production.
+datasource db {
+  provider = "sqlite"
+  url      = "file:dev.sqlite"
+}
+
+enum HoldTrigger {
+  invoice_sent
+  draft_created
+}
+
+enum HoldStatus {
+  active
+  paid
+  expired
+  released
+  error
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model ShopSetting {
+  id        String      @id @default(cuid())
+  shop      String      @unique
+  enabled   Boolean     @default(true)
+  holdHours Int         @default(72)
+  trigger   HoldTrigger @default(invoice_sent)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+model Hold {
+  id              String     @id @default(cuid())
+  shop            String
+  draftOrderId    String
+  draftOrderName  String?
+  invoiceEmail    String?
+  quantitySummary Int        @default(0)
+  lineItemsJson   String?
+  reservedAt      DateTime
+  expiresAt       DateTime
+  status          HoldStatus @default(active)
+  errorMessage    String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@unique([shop, draftOrderId])
+  @@index([shop, status])
+}
+
+model SyncLog {
+  id           String   @id @default(cuid())
+  shop         String
+  draftOrderId String
+  action       String
+  success      Boolean
+  message      String?
+  createdAt    DateTime @default(now())
+
+  @@index([shop, draftOrderId])
+}
+
+model ProcessedEvent {
+  id        String   @id @default(cuid())
+  shop      String
+  eventId   String
+  createdAt DateTime @default(now())
+
+  @@unique([shop, eventId])
+}

@@ -1,0 +1,53 @@
+.page {
+  min-height: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1.25rem 4rem;
+}
+
+.article {
+  width: 100%;
+  max-width: 42rem;
+  text-align: left;
+  display: grid;
+  gap: 1rem;
+}
+
+.article h1,
+.article h2,
+.article p,
+.article ul {
+  margin: 0;
+}
+
+.article h1 {
+  font-size: 1.75rem;
+}
+
+.article h2 {
+  font-size: 1.15rem;
+  padding-top: 0.75rem;
+}
+
+.article p,
+.article li {
+  line-height: 1.5;
+  color: #303030;
+}
+
+.article ul {
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.nav {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+}
+
+.updated {
+  color: #616161;
+  font-size: 0.9rem;
+}

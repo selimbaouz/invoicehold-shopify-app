@@ -1,0 +1,117 @@
+---
+description: InvoiceHold Shopify embedded app MVP scope — one job, APIs, Prisma, screens, and implementation order
+alwaysApply: true
+---
+
+# InvoiceHold — Shopify embedded app MVP
+
+You are building InvoiceHold from a Shopify CLI React Router + Prisma template (same stack as SharedStock: React Router 7, Polaris, Prisma, SQLite in dev, Postgres in prod, OAuth from the template).
+
+Work in English in the UI, listing copy, and code comments. TypeScript strict. Polaris only (no custom CSS outside the Shopify design system). Follow Shopify AI Toolkit / current Admin GraphQL docs — do not invent APIs.
+
+## What this app is (ONE job)
+
+Merchants send Shopify **draft order invoices** (quotes / wholesale / net terms). Shopify does **not** hold inventory unless they click “Reserve items”. They forget. The online store sells the same units. On payment day they are short.
+
+InvoiceHold: when a draft invoice is sent, **reserve the line items** in Shopify and set an **expiry**. If the customer pays, the draft becomes an order (Shopify handles it). If they don’t pay before expiry, stock returns to the storefront (use Shopify’s native `reserveInventoryUntil` — do not invent a second inventory system).
+
+The merchant still creates drafts in Shopify Admin. InvoiceHold does not create quotes, PDFs, B2B portals, or discounts.
+
+## What this is NOT
+
+- Not a bundle app, not SharedStock, not BreakList
+- Not a storefront cart timer (HoldCart / Reservit — different problem)
+- Not a draft-order editor / RFQ / checkout-from-draft suite (Draftable)
+- Not an inventory manager, forecasting, Amazon, purchase orders, location transfers
+- No Billing API (pricing will be Partner Dashboard like SharedStock)
+- No theme app extension, no checkout UI
+
+## The one rule (do not duplicate this logic)
+
+**A sent draft invoice = promised stock.** Those units must not be sellable on the storefront until payment or until `reserveInventoryUntil`.
+
+Trigger: **invoice sent**, not every draft created (merchants create test drafts). If Shopify has no reliable “invoice sent” webhook field, document what you used (`draft_orders/update` + invoiceUrl / status) and make it a setting: “On invoice send” (default) vs “On draft create”.
+
+Duration: shop setting, default **72 hours**. `reserveInventoryUntil = now + duration`.
+
+Idempotent: if Shopify replays the webhook, do **not** double-reserve or stack extra days. Key = `shop + draftOrderId`. Skip if a hold already exists and is still active.
+
+Never process the same event twice (same pattern as SharedStock `ProcessedOrder`).
+
+## Shopify APIs (verify in current docs)
+
+- Draft orders: `reserveInventoryUntil` on create/update (`draftOrderUpdate` / `DraftOrderInput`)
+- Completing a draft reserves as a real order — do not fight Shopify
+- Webhooks to subscribe (confirm topics for current API version): `draft_orders/update`, `draft_orders/delete`, plus GDPR (`customers/data_request`, `customers/redact`, `shop/redact`)
+- On uninstall / `shop/redact`: wipe all InvoiceHold rows for that shop
+- Use Admin GraphQL only, API version matching the template
+
+If `reserveInventoryUntil` already auto-releases stock, **do not** write a second release path that can double-restock. Optionally a daily job only to mark local rows `expired` for the UI if Shopify already released.
+
+## Prisma
+
+Shop setting:
+- `shop` (unique)
+- `enabled` (boolean, default true)
+- `holdHours` (int, default 72)
+- `trigger` (enum: invoice_sent | draft_created)
+
+Hold:
+- `shop`
+- `draftOrderId` (Shopify GID or numeric id, consistent)
+- `draftOrderName` / invoice email if available
+- `reservedAt`
+- `expiresAt`
+- `status`: active | paid | expired | released | error
+- `errorMessage` nullable
+- unique `(shop, draftOrderId)`
+
+Sync log (like SharedStock):
+- shop, draftOrderId, action, success, message, createdAt
+
+No customer PII beyond what Shopify already sends on the draft (email for display). Privacy: public `/privacy` and `/terms` in English. Help page with support mailto.
+
+## Pure functions (testable, not in route files)
+
+- `computeExpiry(from: Date, holdHours: number): Date`
+- `shouldReserve(trigger, draftPayload): boolean` — invoice sent vs created
+- `isHoldIdempotent(existingHold, incomingEvent): 'skip' | 'create' | 'update'`
+
+Unit tests for those three. No duplicate expiry math in webhooks.
+
+## Admin screens (Polaris, 4 screens max)
+
+1. **Holds list** (`/app`) — active holds: draft name, customer/email if any, qty summary, expires in…, status badge (Held / Paid / Expired / Error). Empty state explaining the Shopify gap in one sentence. Refresh if GraphQL is slow.
+2. **Hold detail** — line items, timestamps, log, manual “Release now” (clears reservation via API if Shopify allows).
+3. **Settings** — enable/disable auto-hold, hours (24 / 72 / 168), trigger invoice vs create. Short explanation: Flow can do a dumb reserve; InvoiceHold adds expiry + list + invoice-send trigger.
+4. **Help** — English. Not a bundle app. Link privacy/terms. Support email placeholder `hello@brandionary.com`.
+
+Nav: Holds, Settings, Help. UI English for App Store review (same bar as SharedStock).
+
+## Logging
+
+Log every reserve / skip / release / error for the detail screen. Failures must be visible (badge Error), never silent.
+
+## Files / conventions
+
+- Embedded app auth as in the template (`authenticate.admin`)
+- Webhook handlers HMAC-verified as in the template
+- `shopify.app.toml` = source of truth for webhooks and app_url
+- Do not commit secrets; `.env.example` without real API keys
+- `automatically_update_urls_on_dev`: warn in README that it hijacks production URLs
+
+README: what InvoiceHold is, what it is not, local `shopify app dev`, that merchants still create drafts in Shopify.
+
+## First implementation slice (do this order)
+
+1. Prisma migrate + models
+2. Settings loader/action
+3. GraphQL helper: apply `reserveInventoryUntil` on a draft
+4. Webhook: detect invoice send → reserve idempotently → write Hold + log
+5. List + detail UI
+6. GDPR + privacy/terms + uninstall wipe
+7. Tests for the three pure functions
+
+Do not scaffold BreakList features, location diagnostics, or transfers.
+
+When a Shopify API detail is unclear, look it up; do not guess mutations. Prefer the smallest change that holds stock on invoice send with an expiry.
