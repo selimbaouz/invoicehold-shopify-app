@@ -6,10 +6,12 @@ generator client {
   binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
-// SQLite in local dev. Switch the provider to postgresql and DATABASE_URL in production.
+// Postgres in production (Neon) and for `shopify app dev` when DATABASE_URL is set.
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider  = "postgresql"
+  url  	    = env("DATABASE_URL")
+  // uncomment next line if you use Prisma <5.10
+  // directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 enum HoldTrigger {

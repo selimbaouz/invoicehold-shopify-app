@@ -42,7 +42,14 @@ Open the app from the Shopify Admin of your development store. Create a draft or
 
 ## Production
 
-Use PostgreSQL in production (change `prisma/schema.prisma` `provider` to `postgresql` and set `DATABASE_URL`). Do not commit secrets; copy `.env.example`.
+Postgres (Neon) via `DATABASE_URL`. Deploy with the repo `Dockerfile` (Railway). Set these in the host’s env — do not commit `.env`:
+
+- `DATABASE_URL` — Neon pooled connection string (`sslmode=require`)
+- `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET`
+- `SHOPIFY_APP_URL` — public Railway URL (`https://….up.railway.app`)
+- `SCOPES=write_draft_orders`
+
+`prisma migrate deploy` runs on boot (`npm run docker-start`).
 
 ## Tests
 
