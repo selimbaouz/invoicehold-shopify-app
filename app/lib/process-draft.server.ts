@@ -232,7 +232,7 @@ export async function processDraftOrderWebhook(options: {
       shop,
       draftOrderId: parsed.draftOrderId,
       draftOrderName: result.draftOrder.name ?? parsed.draftOrderName,
-      invoiceEmail: result.draftOrder.email ?? parsed.invoiceEmail,
+      invoiceEmail: parsed.invoiceEmail,
       quantitySummary: parsed.quantitySummary,
       lineItems: parsed.lineItems,
       reservedAt: now,
@@ -248,7 +248,6 @@ export async function processDraftOrderWebhook(options: {
       message: `Reserved until ${expiresAt.toISOString()} (${settings.holdHours}h)`,
     });
   } catch (error) {
-    await releaseProcessedEvent(shop, webhookId);
     const message = error instanceof Error ? error.message : String(error);
     await writeSyncLog({
       shop,
@@ -257,7 +256,9 @@ export async function processDraftOrderWebhook(options: {
       success: false,
       message,
     });
-    throw error;
+    console.error(
+      `[InvoiceHold] ${shop} ${parsed.draftOrderId}: ${message}`,
+    );
   }
 }
 
@@ -372,4 +373,91 @@ export async function releaseHoldNow(options: {
     message: "Merchant released the reservation",
   });
   return { ok: true, message: "Reservation released" };
+}
+
+export async function updateHoldExpiry(options: {
+  admin: GraphqlClient;
+  shop: string;
+  holdId: string;
+  expiresAt: Date;
+}): Promise<{ ok: boolean; message: string }> {
+  const hold = await prisma.hold.findFirst({
+    where: { id: options.holdId, shop: options.shop },
+  });
+  if (!hold) {
+    return { ok: false, message: "Hold not found" };
+  }
+  if (
+    hold.status === "paid" ||
+    hold.status === "released"
+  ) {
+    return { ok: false, message: `Cannot change expiry on a ${hold.status} hold` };
+  }
+
+  const result = await applyReserveInventoryUntil(
+    options.admin,
+    hold.draftOrderId,
+    options.expiresAt,
+  );
+  if (!result.ok) {
+    await prisma.hold.update({
+      where: { id: hold.id },
+      data: { status: "error", errorMessage: result.message },
+    });
+    await writeSyncLog({
+      shop: options.shop,
+      draftOrderId: hold.draftOrderId,
+      action: "update",
+      success: false,
+      message: result.message,
+    });
+    return { ok: false, message: result.message };
+  }
+
+  await prisma.hold.update({
+    where: { id: hold.id },
+    data: {
+      expiresAt: options.expiresAt,
+      status: "active",
+      errorMessage: null,
+    },
+  });
+  await writeSyncLog({
+    shop: options.shop,
+    draftOrderId: hold.draftOrderId,
+    action: "update",
+    success: true,
+    message: `Expiry set to ${options.expiresAt.toISOString()}`,
+  });
+  return { ok: true, message: "Expiry updated" };
+}
+
+export async function deleteHold(options: {
+  admin: GraphqlClient;
+  shop: string;
+  holdId: string;
+}): Promise<{ ok: boolean; message: string }> {
+  const hold = await prisma.hold.findFirst({
+    where: { id: options.holdId, shop: options.shop },
+  });
+  if (!hold) {
+    return { ok: false, message: "Hold not found" };
+  }
+
+  if (hold.status === "active" || hold.status === "error") {
+    const released = await releaseHoldNow({
+      admin: options.admin,
+      shop: options.shop,
+      holdId: hold.id,
+    });
+    if (!released.ok) return released;
+  }
+
+  await prisma.$transaction([
+    prisma.syncLog.deleteMany({
+      where: { shop: options.shop, draftOrderId: hold.draftOrderId },
+    }),
+    prisma.hold.delete({ where: { id: hold.id } }),
+  ]);
+  return { ok: true, message: "Hold deleted" };
 }

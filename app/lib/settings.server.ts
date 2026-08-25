@@ -1,11 +1,6 @@
 import type { ShopSetting } from "@prisma/client";
 import prisma from "../db.server";
-import {
-  HOLD_HOUR_OPTIONS,
-  HOLD_TRIGGERS,
-  type HoldHours,
-  type HoldTrigger,
-} from "./hold";
+import { HOLD_TRIGGERS, parseHoldHours, type HoldTrigger } from "./hold";
 
 export async function getOrCreateShopSetting(
   shop: string,
@@ -21,7 +16,7 @@ export async function updateShopSetting(
   shop: string,
   data: {
     enabled: boolean;
-    holdHours: HoldHours;
+    holdHours: number;
     trigger: HoldTrigger;
   },
 ): Promise<ShopSetting> {
@@ -41,13 +36,7 @@ export async function updateShopSetting(
   });
 }
 
-export function parseHoldHours(value: unknown): HoldHours {
-  const hours = Number(value);
-  if ((HOLD_HOUR_OPTIONS as readonly number[]).includes(hours)) {
-    return hours as HoldHours;
-  }
-  return 72;
-}
+export { parseHoldHours };
 
 export function parseHoldTrigger(value: unknown): HoldTrigger {
   const trigger = String(value ?? "");

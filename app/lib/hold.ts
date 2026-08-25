@@ -10,8 +10,65 @@ export const HOLD_STATUSES = [
 ] as const;
 export type HoldStatus = (typeof HOLD_STATUSES)[number];
 
-export const HOLD_HOUR_OPTIONS = [24, 72, 168] as const;
-export type HoldHours = (typeof HOLD_HOUR_OPTIONS)[number];
+export const HOLD_HOUR_PRESETS = [12, 24, 48, 72, 168, 336, 720] as const;
+export const MIN_HOLD_HOURS = 1;
+export const MAX_HOLD_HOURS = 8760;
+
+export function parseHoldHours(value: unknown): number {
+  const hours = Number(value);
+  if (!Number.isInteger(hours) || hours < MIN_HOLD_HOURS || hours > MAX_HOLD_HOURS) {
+    return 72;
+  }
+  return hours;
+}
+
+export function toLocalDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function toLocalTimeString(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+export function parseExpiryDateTime(
+  dateValue: unknown,
+  timeValue: unknown,
+  now: Date = new Date(),
+): { ok: true; expiresAt: Date } | { ok: false; message: string } {
+  const date = String(dateValue ?? "").trim();
+  const time = String(timeValue ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { ok: false, message: "Choose an expiry date" };
+  }
+  const timeMatch = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (!timeMatch) {
+    return { ok: false, message: "Choose an expiry time" };
+  }
+  const hours = Number(timeMatch[1]);
+  const minutes = Number(timeMatch[2]);
+  if (hours > 23 || minutes > 59) {
+    return { ok: false, message: "Choose a valid time" };
+  }
+
+  const [year, month, day] = date.split("-").map(Number);
+  const expiresAt = new Date(year, month - 1, day, hours, minutes, 0, 0);
+  if (Number.isNaN(expiresAt.getTime())) {
+    return { ok: false, message: "Choose a valid date and time" };
+  }
+  if (expiresAt.getTime() <= now.getTime() + 60_000) {
+    return { ok: false, message: "Expiry must be in the future" };
+  }
+  const max = new Date(now.getTime() + 366 * 24 * 60 * 60 * 1000);
+  if (expiresAt.getTime() > max.getTime()) {
+    return { ok: false, message: "Expiry cannot be more than 1 year away" };
+  }
+  return { ok: true, expiresAt };
+}
 
 export type DraftReservePayload = {
   status?: string | null;

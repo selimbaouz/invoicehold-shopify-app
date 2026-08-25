@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
   computeExpiry,
   isHoldIdempotent,
+  parseExpiryDateTime,
+  parseHoldHours,
   shouldReserve,
 } from "./hold.ts";
 
@@ -21,6 +23,47 @@ describe("computeExpiry", () => {
       computeExpiry(from, 168).toISOString(),
       "2026-08-31T12:00:00.000Z",
     );
+  });
+});
+
+describe("parseHoldHours", () => {
+  it("accepts preset and custom hour values", () => {
+    assert.equal(parseHoldHours(12), 12);
+    assert.equal(parseHoldHours("48"), 48);
+    assert.equal(parseHoldHours(720), 720);
+  });
+
+  it("falls back to 72 for invalid values", () => {
+    assert.equal(parseHoldHours(0), 72);
+    assert.equal(parseHoldHours(-1), 72);
+    assert.equal(parseHoldHours(9000), 72);
+    assert.equal(parseHoldHours("abc"), 72);
+  });
+});
+
+describe("parseExpiryDateTime", () => {
+  const now = new Date(2026, 7, 25, 10, 0, 0, 0);
+
+  it("combines a local date and time", () => {
+    const parsed = parseExpiryDateTime("2026-08-28", "17:30", now);
+    assert.equal(parsed.ok, true);
+    if (parsed.ok) {
+      assert.equal(parsed.expiresAt.getFullYear(), 2026);
+      assert.equal(parsed.expiresAt.getMonth(), 7);
+      assert.equal(parsed.expiresAt.getDate(), 28);
+      assert.equal(parsed.expiresAt.getHours(), 17);
+      assert.equal(parsed.expiresAt.getMinutes(), 30);
+    }
+  });
+
+  it("rejects a time in the past", () => {
+    const parsed = parseExpiryDateTime("2026-08-25", "09:00", now);
+    assert.equal(parsed.ok, false);
+  });
+
+  it("rejects a date more than one year away", () => {
+    const parsed = parseExpiryDateTime("2028-08-25", "10:00", now);
+    assert.equal(parsed.ok, false);
   });
 });
 

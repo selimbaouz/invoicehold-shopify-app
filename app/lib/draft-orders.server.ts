@@ -15,7 +15,6 @@ type DraftOrderUpdateResponse = {
       draftOrder?: {
         id?: string | null;
         name?: string | null;
-        email?: string | null;
         status?: string | null;
         reserveInventoryUntil?: string | null;
       } | null;
@@ -30,7 +29,6 @@ export type ReserveInventoryResult =
       draftOrder: {
         id: string;
         name: string | null;
-        email: string | null;
         status: string | null;
         reserveInventoryUntil: string | null;
       };
@@ -43,7 +41,6 @@ const DRAFT_ORDER_RESERVE_MUTATION = `#graphql
       draftOrder {
         id
         name
-        email
         status
         reserveInventoryUntil
       }
@@ -55,11 +52,64 @@ const DRAFT_ORDER_RESERVE_MUTATION = `#graphql
   }
 `;
 
+function isProtectedFieldError(message: string): boolean {
+  return /not approved to (use|access) the \w+ field/i.test(message);
+}
+
+function graphqlErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return String(error);
+}
+
+function graphqlBodyFromThrown(error: unknown): GraphqlErrorBody | null {
+  if (!error || typeof error !== "object") return null;
+  const record = error as {
+    body?: unknown;
+    response?: unknown;
+  };
+  if (record.body && typeof record.body === "object") {
+    return record.body as GraphqlErrorBody;
+  }
+  if (record.response && typeof record.response === "object") {
+    return record.response as GraphqlErrorBody;
+  }
+  return null;
+}
+
+async function adminGraphqlJson<T extends GraphqlErrorBody>(
+  admin: GraphqlClient,
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    const response = await admin.graphql(
+      query,
+      variables ? { variables } : undefined,
+    );
+    return (await response.json()) as T;
+  } catch (error) {
+    const body = graphqlBodyFromThrown(error);
+    if (body) return body as T;
+    throw error;
+  }
+}
+
+function blockingGraphqlErrors(errors: Array<{ message?: string }> | undefined) {
+  return (
+    errors?.filter(
+      (error) => error.message && !isProtectedFieldError(error.message),
+    ) ?? []
+  );
+}
+
 /**
  * Sets Shopify's native draft-order reservation expiry.
  * Passing a Date reserves until that instant.
  * Passing null sets a past timestamp so Shopify releases stock — we do not
  * write a second inventory adjustment.
+ *
+ * Do not select DraftOrder.email here: that field needs Partner Dashboard
+ * protected-customer-data approval and would fail the whole mutation.
  */
 export async function applyReserveInventoryUntil(
   admin: GraphqlClient,
@@ -70,18 +120,20 @@ export async function applyReserveInventoryUntil(
     until ?? new Date(Date.now() - 1000)
   ).toISOString();
 
-  const response = await admin.graphql(DRAFT_ORDER_RESERVE_MUTATION, {
-    variables: {
+  const json = await adminGraphqlJson<DraftOrderUpdateResponse>(
+    admin,
+    DRAFT_ORDER_RESERVE_MUTATION,
+    {
       id: draftOrderGid,
       input: { reserveInventoryUntil },
     },
-  });
-  const json = (await response.json()) as DraftOrderUpdateResponse;
+  );
 
-  if (json.errors?.length) {
+  const blocking = blockingGraphqlErrors(json.errors);
+  if (blocking.length > 0) {
     return {
       ok: false,
-      message: json.errors
+      message: blocking
         .map((error) => error.message)
         .filter(Boolean)
         .join("; "),
@@ -100,7 +152,12 @@ export async function applyReserveInventoryUntil(
 
   const draftOrder = payload?.draftOrder;
   if (!draftOrder?.id) {
-    return { ok: false, message: "draftOrderUpdate returned no draft order" };
+    return {
+      ok: false,
+      message:
+        json.errors?.map((error) => error.message).filter(Boolean).join("; ") ||
+        "draftOrderUpdate returned no draft order",
+    };
   }
 
   return {
@@ -108,7 +165,6 @@ export async function applyReserveInventoryUntil(
     draftOrder: {
       id: draftOrder.id,
       name: draftOrder.name ?? null,
-      email: draftOrder.email ?? null,
       status: draftOrder.status ?? null,
       reserveInventoryUntil: draftOrder.reserveInventoryUntil ?? null,
     },
@@ -118,7 +174,6 @@ export async function applyReserveInventoryUntil(
 export type LiveDraftOrder = {
   id: string;
   name: string | null;
-  email: string | null;
   status: string | null;
   reserveInventoryUntil: string | null;
   invoiceSentAt: string | null;
@@ -135,7 +190,6 @@ type DraftOrderQueryResponse = {
     draftOrder?: {
       id?: string | null;
       name?: string | null;
-      email?: string | null;
       status?: string | null;
       reserveInventoryUntil?: string | null;
       invoiceSentAt?: string | null;
@@ -155,13 +209,13 @@ export async function fetchDraftOrder(
   admin: GraphqlClient,
   draftOrderGid: string,
 ): Promise<LiveDraftOrder | null> {
-  const response = await admin.graphql(
+  const json = await adminGraphqlJson<DraftOrderQueryResponse>(
+    admin,
     `#graphql
     query InvoiceHoldDraftOrder($id: ID!) {
       draftOrder(id: $id) {
         id
         name
-        email
         status
         reserveInventoryUntil
         invoiceSentAt
@@ -175,11 +229,17 @@ export async function fetchDraftOrder(
         }
       }
     }`,
-    { variables: { id: draftOrderGid } },
+    { id: draftOrderGid },
   );
-  const json = (await response.json()) as DraftOrderQueryResponse;
-  if (json.errors?.length) {
-    throw new Error(json.errors.map((error) => error.message).join("; "));
+
+  const blocking = blockingGraphqlErrors(json.errors);
+  if (blocking.length > 0) {
+    throw new Error(
+      blocking
+        .map((error) => error.message)
+        .filter(Boolean)
+        .join("; ") || graphqlErrorMessage(json.errors),
+    );
   }
 
   const draft = json.data?.draftOrder;
@@ -188,7 +248,6 @@ export async function fetchDraftOrder(
   return {
     id: draft.id,
     name: draft.name ?? null,
-    email: draft.email ?? null,
     status: draft.status ?? null,
     reserveInventoryUntil: draft.reserveInventoryUntil ?? null,
     invoiceSentAt: draft.invoiceSentAt ?? null,

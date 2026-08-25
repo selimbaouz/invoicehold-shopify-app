@@ -23,10 +23,21 @@ api_version = "2026-07"
   [[webhooks.subscriptions]]
   uri = "/webhooks/draft-orders"
   topics = [ "draft_orders/create", "draft_orders/update" ]
+  # Omit email/address so the payload is not level-2 PII. Draft orders as a
+  # topic still require Protected customer data access in Partner Dashboard.
+  include_fields = [
+    "id",
+    "admin_graphql_api_id",
+    "name",
+    "status",
+    "invoice_sent_at",
+    "line_items",
+  ]
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/draft-orders/delete"
   topics = [ "draft_orders/delete" ]
+  include_fields = [ "id", "admin_graphql_api_id", "name", "status" ]
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/customers/data_request"

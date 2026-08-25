@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -7,9 +7,10 @@ import type {
 import { Form, useActionData, useLoaderData, useNavigation } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { HOLD_HOUR_PRESETS, parseHoldHours } from "../lib/hold";
+import { holdHoursLabel } from "../lib/hold-display";
 import {
   getOrCreateShopSetting,
-  parseHoldHours,
   parseHoldTrigger,
   updateShopSetting,
 } from "../lib/settings.server";
@@ -28,9 +29,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const formData = await request.formData();
+  const preset = String(formData.get("holdHours") ?? "");
+  const holdHours =
+    preset === "custom"
+      ? parseHoldHours(formData.get("customHoldHours"))
+      : parseHoldHours(preset);
+
   await updateShopSetting(session.shop, {
     enabled: String(formData.get("enabled")) === "true",
-    holdHours: parseHoldHours(formData.get("holdHours")),
+    holdHours,
     trigger: parseHoldTrigger(formData.get("trigger")),
   });
   return { saved: true };
@@ -42,6 +49,12 @@ export default function SettingsPage() {
   const navigation = useNavigation();
   const shopify = useAppBridge();
   const isSaving = navigation.state === "submitting";
+  const isPreset = (HOLD_HOUR_PRESETS as readonly number[]).includes(
+    settings.holdHours,
+  );
+  const [duration, setDuration] = useState(
+    isPreset ? String(settings.holdHours) : "custom",
+  );
 
   useEffect(() => {
     if (actionData?.saved) {
@@ -56,6 +69,10 @@ export default function SettingsPage() {
           Shopify Flow can reserve inventory on a draft. InvoiceHold adds an
           expiry, a holds list, and an invoice-send trigger so test drafts are
           not reserved.
+        </s-paragraph>
+        <s-paragraph>
+          New invoices use the default duration below. On any hold, you can pick
+          an exact expiry date and time.
         </s-paragraph>
       </s-section>
 
@@ -73,13 +90,30 @@ export default function SettingsPage() {
 
             <s-select
               name="holdHours"
-              label="Hold duration"
-              value={String(settings.holdHours)}
+              label="Default hold duration"
+              value={duration}
+              onChange={(event) => setDuration(event.currentTarget.value)}
             >
-              <s-option value="24">24 hours</s-option>
-              <s-option value="72">72 hours</s-option>
-              <s-option value="168">7 days (168 hours)</s-option>
+              {HOLD_HOUR_PRESETS.map((hours) => (
+                <s-option key={hours} value={String(hours)}>
+                  {holdHoursLabel(hours)}
+                </s-option>
+              ))}
+              <s-option value="custom">Custom hours…</s-option>
             </s-select>
+
+            {duration === "custom" ? (
+              <s-stack gap="small-200">
+                <s-text-field
+                  label="Custom hours"
+                  name="customHoldHours"
+                  defaultValue={String(settings.holdHours)}
+                />
+                <s-paragraph>
+                  1 to 8,760 hours (up to one year). Applies to new invoices.
+                </s-paragraph>
+              </s-stack>
+            ) : null}
 
             <s-select
               name="trigger"

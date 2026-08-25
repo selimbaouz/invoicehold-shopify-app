@@ -46,16 +46,16 @@ export default function HelpPage() {
             storefront.
           </s-list-item>
           <s-list-item>
-            Watch the hold on the Holds page. Release it early if the quote is
-            cancelled.
+            Watch holds on the Holds page. Change the expiry there, or open the
+            draft in Shopify Admin to see line items.
           </s-list-item>
         </s-ordered-list>
       </s-section>
 
       <s-section heading="What does the Error badge mean?">
         <s-paragraph>
-          Shopify rejected or could not apply the reservation. Open the hold to
-          read the log. Failures are never silent.
+          The Error badge means Shopify could not reserve stock. Change the
+          expiry to retry, or delete the hold. Failures are never silent.
         </s-paragraph>
       </s-section>
 
