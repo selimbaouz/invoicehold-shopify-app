@@ -1,18 +1,24 @@
 import { reactRouter } from "@react-router/dev/vite";
 import { defineConfig, type UserConfig } from "vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { withShopifyAppUrl } from "./app/lib/shopify-app-url";
+
+const hostEnv = process.env.HOST?.trim() ?? "";
+const isBindAllHost = hostEnv === "0.0.0.0" || hostEnv === "::";
 
 if (
-  process.env.HOST &&
+  hostEnv &&
+  !isBindAllHost &&
   (!process.env.SHOPIFY_APP_URL ||
     process.env.SHOPIFY_APP_URL === process.env.HOST)
 ) {
-  process.env.SHOPIFY_APP_URL = process.env.HOST;
+  process.env.SHOPIFY_APP_URL = hostEnv;
   delete process.env.HOST;
 }
 
-const host = new URL(process.env.SHOPIFY_APP_URL || "http://localhost")
-  .hostname;
+const host = new URL(
+  withShopifyAppUrl(process.env.SHOPIFY_APP_URL) || "http://localhost",
+).hostname;
 
 let hmrConfig;
 if (host === "localhost") {

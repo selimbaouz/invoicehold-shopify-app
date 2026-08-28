@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "cf8bcdeeeb277bd93580b22fe8d9b23e"
-application_url = "https://invoicehold-shopify-app-production.up.railway.app"
+application_url = "https://invoicehold.up.railway.app"
 embedded = true
 name = "InvoiceHold"
 
@@ -52,7 +52,7 @@ api_version = "2026-07"
   compliance_topics = [ "shop/redact" ]
 
 [auth]
-redirect_urls = [ "https://invoicehold-shopify-app-production.up.railway.app/api/auth" ]
+redirect_urls = [ "https://invoicehold.up.railway.app/api/auth" ]
 
 [build]
 automatically_update_urls_on_dev = true
