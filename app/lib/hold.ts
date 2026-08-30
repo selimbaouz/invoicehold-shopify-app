@@ -90,6 +90,21 @@ export function computeExpiry(from: Date, holdHours: number): Date {
   return new Date(from.getTime() + holdHours * 60 * 60 * 1000);
 }
 
+/** GraphQL input for reserveInventoryUntil. Null clears the reservation. */
+export function reserveUntilInput(until: Date | null): string | null {
+  return until ? until.toISOString() : null;
+}
+
+/** Date/time fields for the expiry editor. Past values snap to two minutes ahead. */
+export function expiryEditorDefaults(expiresAt: Date, now: Date = new Date()) {
+  const min = new Date(now.getTime() + 2 * 60_000);
+  const use = expiresAt.getTime() > min.getTime() ? expiresAt : min;
+  return {
+    date: toLocalDateString(use),
+    time: toLocalTimeString(use),
+  };
+}
+
 /**
  * Invoice-send detection uses REST webhook fields on draft_orders/create and
  * draft_orders/update:

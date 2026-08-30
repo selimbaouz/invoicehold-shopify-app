@@ -9,6 +9,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import {
+  expiryEditorDefaults,
   parseExpiryDateTime,
   toLocalDateString,
   toLocalTimeString,
@@ -217,12 +218,14 @@ export default function HoldsIndex() {
                           command="--show"
                           disabled={isBusy || undefined}
                           onClick={() => {
-                            const expiresAt = new Date(hold.expiresAt);
+                            const fields = expiryEditorDefaults(
+                              new Date(hold.expiresAt),
+                            );
                             setPendingExpiry({
                               id: hold.id,
                               name: hold.draftOrderName || "Draft order",
-                              date: toLocalDateString(expiresAt),
-                              time: toLocalTimeString(expiresAt),
+                              date: fields.date,
+                              time: fields.time,
                               canRelease: canReleaseHold(hold.status),
                               errorMessage: hold.errorMessage,
                             });

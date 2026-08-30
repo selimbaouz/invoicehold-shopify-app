@@ -3,7 +3,7 @@
 client_id = "cf8bcdeeeb277bd93580b22fe8d9b23e"
 application_url = "https://invoicehold.up.railway.app"
 embedded = true
-name = "InvoiceHold"
+name = "Invoice Hold"
 
 [access_scopes]
 # write_draft_orders is required for draftOrderUpdate (reserveInventoryUntil).

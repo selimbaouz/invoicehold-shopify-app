@@ -450,7 +450,8 @@ export async function deleteHold(options: {
       shop: options.shop,
       holdId: hold.id,
     });
-    if (!released.ok) return released;
+    // Error holds never reserved (or already failed). Still remove the row.
+    if (!released.ok && hold.status === "active") return released;
   }
 
   await prisma.$transaction([

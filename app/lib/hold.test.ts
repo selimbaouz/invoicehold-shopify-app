@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   computeExpiry,
+  expiryEditorDefaults,
   isHoldIdempotent,
   parseExpiryDateTime,
   parseHoldHours,
+  reserveUntilInput,
   shouldReserve,
 } from "./hold.ts";
 
@@ -38,6 +40,27 @@ describe("parseHoldHours", () => {
     assert.equal(parseHoldHours(-1), 72);
     assert.equal(parseHoldHours(9000), 72);
     assert.equal(parseHoldHours("abc"), 72);
+  });
+});
+
+describe("reserveUntilInput", () => {
+  it("sends an ISO timestamp to reserve and null to release", () => {
+    const until = new Date("2026-08-30T15:00:00.000Z");
+    assert.equal(reserveUntilInput(until), "2026-08-30T15:00:00.000Z");
+    assert.equal(reserveUntilInput(null), null);
+  });
+});
+
+describe("expiryEditorDefaults", () => {
+  it("keeps a future expiry and snaps a past one forward", () => {
+    const now = new Date(2026, 7, 30, 20, 41, 0, 0);
+    const future = expiryEditorDefaults(new Date(2026, 7, 31, 10, 0, 0, 0), now);
+    assert.equal(future.date, "2026-08-31");
+    assert.equal(future.time, "10:00");
+
+    const snapped = expiryEditorDefaults(new Date(2026, 7, 30, 0, 0, 0, 0), now);
+    assert.equal(snapped.date, "2026-08-30");
+    assert.equal(snapped.time, "20:43");
   });
 });
 

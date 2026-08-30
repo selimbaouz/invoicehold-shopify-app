@@ -1,3 +1,5 @@
+import { reserveUntilInput } from "./hold";
+
 export type GraphqlClient = {
   graphql: (
     query: string,
@@ -105,8 +107,14 @@ function blockingGraphqlErrors(errors: Array<{ message?: string }> | undefined) 
 /**
  * Sets Shopify's native draft-order reservation expiry.
  * Passing a Date reserves until that instant.
- * Passing null sets a past timestamp so Shopify releases stock — we do not
- * write a second inventory adjustment.
+ * Passing null sends reserveInventoryUntil: null so Shopify releases stock.
+ * Do not send a past timestamp — Shopify rejects “Reserve until can't be in
+ * the past” and that blocked Delete / Release.
+ *
+ * Do not call inventorySetQuantities / inventoryAdjustQuantities here.
+ * Those mutations require changeFromQuantity (2026-04+) and @idempotent;
+ * SharedStock needs them because it writes stock. InvoiceHold only sets
+ * reserveInventoryUntil on the draft.
  *
  * Do not select DraftOrder.email here: that field needs Partner Dashboard
  * protected-customer-data approval and would fail the whole mutation.
@@ -116,16 +124,12 @@ export async function applyReserveInventoryUntil(
   draftOrderGid: string,
   until: Date | null,
 ): Promise<ReserveInventoryResult> {
-  const reserveInventoryUntil = (
-    until ?? new Date(Date.now() - 1000)
-  ).toISOString();
-
   const json = await adminGraphqlJson<DraftOrderUpdateResponse>(
     admin,
     DRAFT_ORDER_RESERVE_MUTATION,
     {
       id: draftOrderGid,
-      input: { reserveInventoryUntil },
+      input: { reserveInventoryUntil: reserveUntilInput(until) },
     },
   );
 
